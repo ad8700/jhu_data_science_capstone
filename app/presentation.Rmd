@@ -1,0 +1,55 @@
+---
+title: "Word Prediction"
+author: Andy Domenico
+date: November 10, 2022
+output: slidy_presentation
+
+---
+
+## Model Background
+This model is based on the idea that grammar is a framework through which  
+language can be understood
+
+- Assuming that language is understood, then next words can be predicted  
+- Assuming the predictions are accurate, users can be guided in their search to:  
+  * More useful information  
+  * Information that is more trustworthy  
+
+---
+
+## Model Background (cont.)
+The model uses the theory of n-grams:  Collections of words of length n:
+
+- A bigram is of of length 2, trigram of length 3, etc.  
+- n-grams with the first n-1 words will have a finite number of word possibilities  
+- This application mines open source text documents to:  
+  * create n-grams  
+  * determine the most probable next words given an initial word(s)  
+  * display the most probable next words in the sequence  
+
+---
+
+## Practical applications
+Corporate websites frequently feature help sections, forums for users and other \
+arenas where people search for information.  The algorithm behind the application \
+can be trained on customer searches to predict the next word and auto-complete \
+the search for the user. \
+On the back end, as users submit searches, the searches can be recorded to documents, \
+which can then be mined to better understand user intents.  Those intents give \
+insight to what users want and can guide product development. \
+
+---
+
+## Instructions for User
+The app takes the following inputs  
+- The query word/phrase that the user inputs  
+- The number of predicted words the user wants  
+The predicted next word(s) will display in the order of most to least probable  
+
+
+
+
+
+
+
+
