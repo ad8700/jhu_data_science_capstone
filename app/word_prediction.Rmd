@@ -1,0 +1,361 @@
+---
+title: "Word Prediction"
+output: html_notebook
+---
+
+```{r}
+library(quanteda)
+library(quanteda.textstats)
+library(quanteda.textmodels)
+library(quanteda.textplots)
+library(readtext)
+library(data.table)
+library(stringr)
+library(stringi)
+library(LaF)
+
+setwd("C:/Users/andrew.domenico/git/Capstone_Project/shiny-app-3")
+```
+
+Begin by downloading data if needed, unzip and read into files
+```{r}
+if(!dir.exists("./data")) {
+  dir.create("./data")
+} else {
+  print("Data directory already exists")
+}
+```
+
+```{r}
+if(!file.exists('./data/final/en_US/en_US.blogs.txt')){
+  download.file('https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/Coursera-SwiftKey.zip',
+                destfile = paste0(getwd(), '/data/Coursera-SwiftKey.zip'),
+                method = 'curl', quiet = F)
+  unzip('./data/Coursera-SwiftKey.zip')
+}
+```
+
+line counts in the raw files:
+899288 en_US.blogs.txt
+1010242 en_US.news.txt
+2360148 en_US.twitter.txt
+
+The bash script sampler.sh in the ~/final/en_US directory is used to create samples
+of the large, unwieldy text files.  It takes a random sample of  the lines of the file and stores that in a new file named sample(News, Blogs, Tweets).  This is done because NONE of the R packages used will work on a laptop anymore.  To use the bash script just update it with the desired line count, input file name and output file name as needed.
+
+```{r}
+setwd("C:/Users/andrew.domenico/git/Capstone_Project/shiny-app-3")
+blogs <- readtext(paste0(getwd(), "/final/en_US/sampleBlogs.txt"))
+news <- readtext(paste0(getwd(), "/final/en_US/sampleNews.txt"))
+tweets <- readtext(paste0(getwd(), "/final/en_US/sampleTweets.txt"))
+```
+
+
+Use the quanteda library to create corpus data and combine to a single corpus
+```{r}
+corpBlogs <- corpus(blogs)
+docvars(corpBlogs, 'Source') <- 'blogs'
+
+corpNews <- corpus(news)
+docvars(corpNews, 'Source') <- 'news'
+
+corpTwts <- corpus(tweets)
+docvars(corpTwts, 'Source') <- 'twitter'
+
+```
+
+
+```{r}
+corpAll <- corpBlogs + corpNews + corpTwts
+```
+
+remove unneeded files to free up memory
+```{r}
+rm(blogs, news, tweets)
+rm(corpBlogs, corpNews, corpTwts)
+```
+
+Tokenize the corpus.  To simply tokenize a text, quanteda provides a powerful 
+command called tokens(). This produces an intermediate object, consisting of a 
+list of tokens in the form of character vectors, where each element of the list
+corresponds to an input document. 
+```{r}
+tokenization <- function(input, what = 'word', ngrams = 1L) {
+  
+  ## This function calls the tokens function from quanteda
+  ## takes an input (character, corpus, or token object)
+  ## and returns the tokenized object
+  
+  # step1: tokenize based on input values
+  results <- tokens(x = input, what = what, ngrams = ngrams,
+                    remove_numbers = T, remove_punct = T,
+                    remove_symbols = T, remove_separators = T,
+                    remove_twitter = T, remove_hyphens = T,
+                    remove_url = T)
+  
+  # step2: get a list of profanity
+  if (!file.exists('badWords.txt')) {
+    badWordsURL <- "https://raw.githubusercontent.com/coffee-and-fun/google-profanity-words/main/data/list.txt"
+    badWordsFile <- "badwords.txt"
+    if (!file.exists(badWordsFile)) {
+      tempFile <- tempfile()
+      download.file(badWordsURL, tempFile)
+      #unzip(tempFile, exdir = "data")
+      unlink(tempFile)
+      rm(tempFile)
+    }
+    con <- file(badWordsFile, open = "r")
+    profanity <- readLines(con, encoding = "UTF-8", skipNul = TRUE)
+    profanity <- iconv(profanity, "latin1", "ASCII", sub = "")
+    close(con)
+  }
+  prof <- readLines('badWords.txt', skipNul = T)
+  
+  # step3: remove profanity
+  results <- tokens_remove(results, pattern = prof)
+}
+
+
+```
+
+```{r}
+tokWord <- tokenization(corpAll, what = 'word')
+```
+
+
+
+From the tokenized words, we will want to develop ngrams.
+```{r}
+makeNgrams <- function(inputTokens, n, outName) {
+  ## inputTokens: tokenized object
+  ## number of grams
+  ## output file name
+  
+  tokWordNg <- tokens_ngrams(inputTokens, n = n, concatenator = ' ')
+  dfmWordNg <- dfm(tokWordNg, tolower = T)
+  nGram <- textstat_frequency(dfmWordNg)
+  write.csv(nGram, file = paste0(outName, '.csv'), row.names = F)
+}
+
+makeNgrams(tokWord, 1L, 'uniGram')
+makeNgrams(tokWord, 2L, 'biGram')
+makeNgrams(tokWord, 3L, 'triGram')
+makeNgrams(tokWord, 4L, 'quadGram')
+makeNgrams(tokWord, 5L, 'quinGram')
+makeNgrams(tokWord, 6L, 'sixGram')
+makeNgrams(tokWord, 7L, 'septGram')
+```
+
+Now we need to write a function that will generate a table of predictions from the n-grams
+```{r}
+generatePred <- function(inputFile, thresh = 1L) {
+  
+  ## This function makes the prediction look up table
+  ## inputFile: the ngram csv file generated from quanteda
+  ## thresh: threshold to remove low frequency words (default is 1)
+  nGram <- fread(inputFile, select = c('feature', 'frequency'))
+  nGram <- nGram[nGram$frequency > thresh]
+  
+  nGram <- nGram[, query := strsplit(feature, " [^ ]+$")][]
+  nGram <- nGram[, predict := sub('.* (.*)$','\\1', feature)][]
+  
+  fwrite(nGram, paste0(sub('.csv', '', inputFile), 'Pred.csv'))
+  
+}
+```
+
+Aaaand generate!
+```{r}
+generatePred('biGram.csv')
+generatePred('triGram.csv')
+generatePred('quadGram.csv')
+generatePred('quinGram.csv')
+generatePred('sixGram.csv')
+generatePred('septGram.csv')
+```
+
+Combine all of the .csv files produced into one single file for ease of use.
+Again, R is stupidly slow with files, so bash it is!  RStudio has a problem running bash from within the notebook, so there is a bash script called 'paster.sh' in the working directory
+
+Now let's get those predictions from the intermediate file
+```{r}
+nGram <- fread('nGramPred.csv', select = c('query', 'predict', 'frequency'))
+nGram <- nGram[order(-frequency)]
+```
+
+Now we can filter out low occuring frequencies (<5), and keep unique queries 
+```{r}
+nGramFilt <- nGram[frequency >= 5]
+fwrite(nGramFilt, file = 'predictionTableFull.csv')
+
+nGramUni <- nGram[(!duplicated(nGram$query)) & (frequency >= 5)]
+fwrite(nGramUni, file = 'predictionTableUni.csv')
+```
+
+Write a function that takes in a string and predicts next word
+```{r}
+nextWord <- function(rawStr) {
+  ## [A] Remove numbers and punctuations
+  filtList <- gsub('[[:punct:]]|[[:digit:]]', "", tolower(rawStr))
+  # strsplit by all white spaces
+  filtList <- unlist(strsplit(filtList, "\\s+"))
+  
+  ## [B] Extract last 6 words for query
+  if (length(filtList) > 6) {
+    filtList <- filtList[(length(filtList)-5):length(filtList)] #make query length 6
+    filtStr <- paste(filtList, collapse = " ") #combine back to sentence
+  } else {
+    filtStr <- paste(filtList, collapse = " ") #combine back to sentence
+  }
+  
+  ## [C] Predicts the most likely word
+  predText <- nGramUni[match(filtStr, nGramUni$query), ]$predict
+  if (is.na(predText) == F) {
+    #hit with 7 gram
+    finalText <- predText
+  } else {
+    #no hits
+    filtStr <- paste(filtList[2:length(filtList)], collapse = " ") #remove 1st word
+    predText <- nGramUni[match(filtStr, nGramUni$query), ]$predict
+    if (is.na(predText) == F) {
+      #hit with 6 gram
+      finalText <- predText
+    } else {
+      #no hits
+      filtStr <- paste(filtList[3:length(filtList)], collapse = " ") #remove 2nd word
+      predText <- nGramUni[match(filtStr, nGramUni$query), ]$predict
+      if (is.na(predText) == F) {
+        #hit with 5 gram
+        finalText <- predText
+      } else {
+        #no hits
+        filtStr <- paste(filtList[4:length(filtList)], collapse = " ") #remove 3rd word
+        predText <- nGramUni[match(filtStr, nGramUni$query), ]$predict
+        if (is.na(predText) == F) {
+          #hit with 4 gram
+          finalText <- predText
+        } else {
+          #no hits
+          filtStr <- paste(filtList[5:length(filtList)], collapse = " ") #remove 4th word
+          predText <- nGramUni[match(filtStr, nGramUni$query), ]$predict
+          if (is.na(predText) == F) {
+            #hit with 3 gram
+            finalText <- predText
+          } else {
+            #no hits
+            filtStr <- paste(filtList[6:length(filtList)], collapse = " ") #remove 5th word (one word left)
+            predText <- nGramUni[match(filtStr, nGramUni$query), ]$predict
+            if (is.na(predText) == F) {
+              #hit with 2 gram
+              finalText <- predText
+            } else {
+              #no hits
+              finalText <- 'the' #most common word
+            }
+          }
+        }
+      }
+    }  
+  }
+  return(finalText)
+}
+```
+
+
+Let's test the function
+```{r}
+start <- Sys.time()
+nextWord('Hello. My name is Apple and I am 2 years.')
+Sys.time() - start
+
+```
+
+OK, somewhat nonsensical, but I'm only using 1% so far and 'years ago' is a legit prediction.  I probably need to go back and train on more data, but let's press ahead for now
+
+That was single word prediction.  Let's try to predict multiple words
+```{r}
+nGramAll <- fread('predictionTableFull.csv')
+```
+
+```{r}
+nextWords <- function(rawStr, n) {
+  ## [A] Remove numbers and punctuations
+  filtList <- gsub('[[:punct:]]|[[:digit:]]', "", tolower(rawStr))
+  # strsplit by all white spaces
+  filtList <- unlist(strsplit(filtList, "\\s+"))
+  
+  ## [B] Extract last 6 words for query
+  if (length(filtList) > 6) {
+    filtList <- filtList[(length(filtList)-5):length(filtList)] #make query length 6
+    filtStr <- paste(filtList, collapse = " ") #combine back to sentence
+  } else {
+    filtStr <- paste(filtList, collapse = " ") #combine back to sentence
+  }
+  
+  ## [C] Returns all the matched words
+  predText <- nGramAll[filtStr == nGramAll$query, ]$predict
+  if (length(predText) > 0) {
+    #hit with 7 gram
+    finalText <- predText
+  } else {
+    #no hits
+    filtStr <- paste(filtList[2:length(filtList)], collapse = " ") #remove 1st word
+    predText <- nGramAll[filtStr == nGramAll$query, ]$predict
+    if (length(predText) > 0) {
+      #hit with 6 gram
+      finalText <- predText
+    } else {
+      #no hits
+      filtStr <- paste(filtList[3:length(filtList)], collapse = " ") #remove 2nd word
+      predText <- nGramAll[filtStr == nGramAll$query, ]$predict
+      if (length(predText) > 0) {
+        #hit with 5 gram
+        finalText <- predText
+      } else {
+        #no hits
+        filtStr <- paste(filtList[4:length(filtList)], collapse = " ") #remove 3rd word
+        predText <- nGramAll[filtStr == nGramAll$query, ]$predict
+        if (length(predText) > 0) {
+          #hit with 4 gram
+          finalText <- predText
+        } else {
+          #no hits
+          filtStr <- paste(filtList[5:length(filtList)], collapse = " ") #remove 4th word
+          predText <- nGramAll[filtStr == nGramAll$query, ]$predict
+          if (length(predText) > 0) {
+            #hit with 3 gram
+            finalText <- predText
+          } else {
+            #no hits
+            filtStr <- paste(filtList[6:length(filtList)], collapse = " ") #remove 5th word (one word left)
+            predText <- nGramAll[filtStr == nGramAll$query, ]$predict
+            if (length(predText) > 0) {
+              #hit with 2 gram
+              finalText <- predText
+            } else {
+              #no hits
+              finalText <- 'the' #most common word
+            }
+          }
+        }
+      }
+    }  
+  }
+  return(finalText[1:n])
+} 
+```
+
+And now to test.  Let's see if the multi-word model does a little better than the single word model
+```{r}
+queryStr <- 'Hello. My name is Apple and I am 2 years.'
+start <- Sys.time()
+nextWords(queryStr, 1)
+Sys.time() - start
+```
+
+OK, same prediction, so at least it's not any worse...But the time was a bit longer: 4.025971 secs vs. 4.872509 secs.  This is nowhere near internet speeds, and probably won't be
+
+I'll do a round of re-training with 15% of the text files.  After that I'm submitting because I'm out of time.
+
+
+
